@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {{#if (eq type "PASSWORD_RESET")}}
+    <title>Passwort zurücksetzen</title>
+    {{else if (eq type "LOGIN")}}
+    <title>Anmeldecode</title>
+    {{else if (eq type "REQUEST_CONFIRM")}}
+    <title>Anfrage bestätigen</title>
+    {{else if (eq type "ORDER_CONFIRM")}}
+    <title>Bestellung bestätigen</title>
+    {{else if (eq type "EMAIL_CONFIRM")}}
+    <title>Email bestätigen</title>
+    {{else if (eq type "EMAIL_CHANGE")}}
+    <title>Email ändern</title>
+    {{else if (eq type "PASSWORD_CHANGE")}}
+    <title>Passwort ändern im Konto</title>
+    {{/if}}
+  </head>
+
+  <body>
+    <h1 style="color: blue">Hello, {{name}}!</h1>
+    {{#if code}} {{#if (q type "LOGIN")}}
+    <p>
+      Geben Sie diesen Code ein, um sich bei Ihrem Konto anzumelden oder folgen
+      Sie dem Link unten
+      <strong>: {{code}}</strong>
+    </p>
+    {{else if (eq type "REQUEST_CONFIRM")}}
+    <p>
+      Um Ihre Bewerbung zu bestätigen, geben Sie ein diesen Code oder folgen Sie
+      den untenstehenden Links
+      <strong>: {{code}}</strong>
+    </p>
+    {{else if (eq type "ORDER_CONFIRM")}}
+    <p>
+      Sie haben eine neue Bestellung. Um Ihre Bestellung zu bestätigen, folgen
+      Sie dem untenstehenden Link
+    </p>
+    {{else if (eq type "EMAIL_CONFIRM")}}
+    <p>
+      Um Ihre Bewerbung zu bestätigen, geben Sie ein diesen Code oder folgen Sie
+      den untenstehenden Links
+      <strong>: {{code}}</strong>
+    </p>
+    {{else if (eq type "EMAIL_CHANGE")}}
+    <p>
+      Sie haben einen Antrag auf Änderung Ihrer E-Mail-Adresse gestellt. Bitte
+      geben Sie diesen Code zur Bestätigung ein. Wenn Sie es nicht waren,
+      ignorieren Sie diese Nachricht
+      <strong>: {{code}}</strong>
+    </p>
+    {{else if (eq type "PASSWORD_CHANGE")}}
+    <p>
+      Sie haben einen Antrag auf Änderung Ihres persönlichen Kontopassworts
+      gestellt. Bitte geben Sie diesen Code zur Bestätigung ein. Wenn nicht,
+      ignorieren Sie diese Nachricht bitte.
+      <strong>: {{code}}</strong>
+    </p>
+    {{/if}} {{/if}} {{#if code}} {{#if (eq type "PASSWORD_RESET")}}
+    <p>
+      Klicken Sie hier, <a href="{{link}}">here</a>um Ihr Passwort
+      zurückzusetzen!
+    </p>
+    {{/if}}
+    <p>
+      Klicken Sie hier, <a href="{{link}}">here</a>um die Aktion zu bestätigen!
+    </p>
+    <p>
+      This link will expire in
+      <span style="color: red">{{expires}} minutes.</span>
+    </p>
+    {{/if}}
+  </body>
+</html>
+
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      {{#if (eq type "PASSWORD_RESET")}}Passwort zurücksetzen
+      {{else if (eq type "LOGIN")}}Anmeldecode
+      {{else if (eq type "REQUEST_CONFIRM")}}Anfrage bestätigen
+      {{else if (eq type "ORDER_CONFIRM")}}Bestellung bestätigen
+      {{else if (eq type "EMAIL_CONFIRM")}}Email bestätigen
+      {{else if (eq type "EMAIL_CHANGE")}}Email ändern
+      {{else if (eq type "PASSWORD_CHANGE")}}Passwort ändern im Konto
+      {{/if}}
+    </title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        color: #333;
+        line-height: 1.6;
+        margin: 20px;
+      }
+      h1 {
+        color: #0066cc;
+        text-align: center;
+      }
+      .code-block {
+        text-align: center;
+        margin: 30px 0;
+      }
+      .code-block span {
+        font-size: 28px;
+        font-weight: bold;
+        color: #d32f2f;
+        letter-spacing: 3px;
+        display: inline-block;
+        padding: 10px 20px;
+        border: 2px solid #d32f2f;
+        border-radius: 6px;
+        background: #fbe9e7;
+      }
+      .link-block {
+        text-align: center;
+        margin: 20px 0;
+      }
+      .link-block a {
+        display: inline-block;
+        padding: 12px 24px;
+        background: #0066cc;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: bold;
+      }
+      .expires {
+        text-align: center;
+        margin-top: 20px;
+        color: #d32f2f;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Hallo, {{name}}!</h1>
+
+    {{!-- LOGIN --}}
+    {{#if (eq type "LOGIN")}}
+      {{#if code}}
+        <div class="code-block">
+          <span>{{code}}</span>
+        </div>
+        <div class="link-block">
+          <a href="{{link}}">Anmelden</a>
+        </div>
+      {{/if}}
+    {{/if}}
+
+    {{!-- REQUEST_CONFIRM --}}
+    {{#if (eq type "REQUEST_CONFIRM")}}
+      {{#if code}}
+        <div class="code-block">
+          <span>{{code}}</span>
+        </div>
+      {{/if}}
+      <div class="link-block">
+        <a href="{{link}}">Anfrage bestätigen</a>
+      </div>
+    {{/if}}
+
+    {{!-- ORDER_CONFIRM --}}
+    {{#if (eq type "ORDER_CONFIRM")}}
+      <div class="link-block">
+        <a href="{{link}}">Bestellung bestätigen</a>
+      </div>
+    {{/if}}
+
+    {{!-- EMAIL_CONFIRM --}}
+    {{#if (eq type "EMAIL_CONFIRM")}}
+      {{#if code}}
+        <div class="code-block">
+          <span>{{code}}</span>
+        </div>
+      {{/if}}
+      <div class="link-block">
+        <a href="{{link}}">Email bestätigen</a>
+      </div>
+    {{/if}}
+
+    {{!-- EMAIL_CHANGE --}}
+    {{#if (eq type "EMAIL_CHANGE")}}
+      {{#if code}}
+        <div class="code-block">
+          <span>{{code}}</span>
+        </div>
+      {{/if}}
+    {{/if}}
+
+    {{!-- PASSWORD_CHANGE --}}
+    {{#if (eq type "PASSWORD_CHANGE")}}
+      {{#if code}}
+        <div class="code-block">
+          <span>{{code}}</span>
+        </div>
+      {{/if}}
+    {{/if}}
+
+    {{!-- PASSWORD_RESET --}}
+    {{#if (eq type "PASSWORD_RESET")}}
+      <div class="link-block">
+        <a href="{{link}}">Passwort zurücksetzen</a>
+      </div>
+    {{/if}}
+
+    <p class="expires">
+      Dieser Link/Code läuft in {{expires}} Minuten ab.
+    </p>
+  </body>
+</html>

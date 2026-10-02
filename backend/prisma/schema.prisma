@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id Int @id @unique @default(autoincrement())
+  email String? @unique
+  emailVerifiedAt DateTime?
+  phone String? @unique
+  phoneVerifiedAt DateTime?
+  googleId String? @unique
+  telegramId String? @unique
+  name String?
+  password String?
+  preferredChannel String?
+  verificationToken VerificationToken[]
+
+   latitude Decimal?
+    longitude Decimal?
+
+  master MasterProfile?
+  ordersAsCustomer Order[]
+  sessions Session[]
+}
+
+model MasterProfile {
+    id Int @id @default(autoincrement())
+    userId Int @unique
+    user User @relation(fields: [userId], references: [id])
+
+    speciality MasterSpecialty
+    description String?
+    documents MasterDocument[]
+    photoUrl String?
+    photoPublicId String?
+    rating Float?
+
+    instagram String?
+    facebook String?
+    youtube String?
+
+    agreedToTerms Boolean @default(false)
+    dateAgreeToTerms DateTime
+
+    minPrice Int?
+    maxPrice Int?
+
+    schedules MasterSchedule[]
+    breaks  ScheduleBreak[]
+    timeBlocks TimeBlock[]
+    serviceAreas ServiceArea[]
+
+    orders Order[]
+    isActive Boolean@default(false)
+
+    @@index([minPrice, maxPrice])
+}
+
+
+model Order {
+ id Int @id @default(autoincrement())
+ customerId Int
+ masterId Int
+
+ verificationToken VerificationToken[]
+
+ description String?
+ postalCode String
+ status OrderStatus @default(CREATED)
+
+ cancelledReason String?
+ dataCancelled DateTime?
+ cancelledById Int?
+
+ customerCompleteddAt DateTime?
+ masterCompleteddAt DateTime?
+
+ customerHiddenAt DateTime?
+ masterHiddenAt   DateTime?
+
+ customer User @relation(fields: [customerId], references: [id])
+ master MasterProfile @relation(fields: [masterId], references: [id])
+
+timeBlock  TimeBlock?
+createdAt DateTime @default(now())
+}
+
+
+enum OrderStatus {
+  CREATED
+  BOOKING
+  CONFIRMED
+  PROPOSED
+  CLIENT_CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  EXPIRED
+}
+
+
+ enum MasterSpecialty {
+  ELECTRICIAN
+  PLUMBER
+  WASHING_MACHINE
+  REFRIGERATOR
+  TV_REPAIR
+  COMPUTER
+  MOBILE
+  CARPENTER
+  PAINTER
+  BUILDER
+  LOCKSMITH
+  HEATING
+  AIR_CONDITIONING
+  GAS_TECHNICIAN
+  AUTO_ELECTRICIAN
+  HAIRDRESSER
+  MANICURE
+  NURSE
+  TEACHER
+  HOUSEKEEPER
+  COOK
+  GARDENER
+}
+
+model MasterSchedule {
+    id Int @id @default(autoincrement())
+    masterId Int
+    master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+    dayOfWeek DayOfWeek
+    isWorking Boolean @default(false)
+    startTime  String
+    endTime String
+
+   @@unique([masterId, dayOfWeek])
+}
+
+model TimeBlock {
+id Int @id @default(autoincrement())
+
+masterId Int
+master MasterProfile @relation(fields: [masterId], references: [id])
+
+startAt DateTime?
+endAt DateTime?
+status TimeBlockStatus
+reservationMinutes Int?
+reservationExpiresAt DateTime?
+
+orderId Int @unique
+order Order  @relation(fields: [orderId], references: [id])
+
+reason TimeBlockReason?
+
+}
+
+enum TimeBlockReason {
+  ORDER
+  PERSONAL
+  BREAK
+  DAY_OFF
+  OTHER
+}
+
+enum TimeBlockStatus {
+  RESERVED
+  BLOCKED
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model ScheduleBreak {
+  id String @id @default(uuid())
+  masterId   Int
+  master     MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  startTime String
+  endTime String
+  type BreakType
+  recurrence String
+}
+
+enum BreakType {
+  LUNCH
+  WORKSHOP
+  PERSONAL
+  OTHER
+}
+
+model ServiceArea {
+  id Int @id @default(autoincrement())
+ name String
+ postalCode String
+ radius Float
+
+  masterId Int
+  master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+ @@index([masterId, postalCode])
+ @@index([postalCode])
+}
+
+
+model Session {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshToken String @unique
+  accessToken String @unique
+  accessTokenValidUntil DateTime
+  refreshTokenValidUntil DateTime
+
+  googleAccessToken      String?
+  googleRefreshToken     String?
+
+  telegramId             String?  @unique
+  telegramAuthDate       DateTime?
+}
+
+
+model VerificationToken {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id])
+
+  orderId Int?
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique
+  codeHash String?
+  type VerificationType
+  expiresAt  DateTime
+
+  @@unique([userId, type])
+}
+
+enum VerificationType {
+  REGISTER
+  LOGIN
+  REQUEST_CONFIRM
+  ORDER_CONFIRM
+  EMAIL_CONFIRM
+  PASSWORD_RESET
+  PASSWORD_CHANGE
+  PHONE_CONFIRM
+}
+
+
+model MasterDocument {
+  id String @id @default(uuid())
+  fileName String
+  fileUrl String
+  filePublicId String
+  mimeType String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  masterId Int
+  master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+}
+
+
+model ZipCodeDirectory {
+  postalCode String @id
+  cityName   String
+  latitude   Float
+  longitude  Float
+
+  @@index([latitude, longitude])
+}
