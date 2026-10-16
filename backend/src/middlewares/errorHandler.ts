@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { isHttpError } from 'http-errors';
 
 interface BodyParserError extends SyntaxError {
@@ -11,7 +11,7 @@ interface ExtendedHttpError extends Error {
   data?: unknown;
 }
 
-export const errorHandler = (err: unknown, req: Request, res: Response) => {
+export const errorHandler = (err: unknown, req: Request, res: Response, next: NextFunction) => {
   if (
     err instanceof SyntaxError &&
     'status' in err &&
@@ -44,4 +44,5 @@ export const errorHandler = (err: unknown, req: Request, res: Response) => {
     message: 'Something went wrong',
     error: message,
   });
+  next()
 };

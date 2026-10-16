@@ -1,4 +1,5 @@
-import { Prisma, VerificationType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { VerificationType } from '../types/types';
 import { configHandwerk } from '../configHandwerk';
 import { buildTemplate } from '../utils/buildTemplate';
 import { sendEmail } from '../utils/sendEmail';
@@ -31,24 +32,30 @@ const subjectByType: Record<VerificationType, string> = {
   REQUEST_CONFIRM: 'Bestätigung Ihrer Anfrage',
   ORDER_CONFIRM: 'Bestätigung Ihrer Bestellung',
   PHONE_CONFIRM: 'Bitte um Änderung der Telefonnummer',
+  EMAIL_CHANGE: 'Änderungsanfrage per E-Mail',
+  PHONE_CHANGE: 'Bitte um Änderung der Telefonnummer',
 };
 
 export const sendVerificationEmail = async ({
   user,
+  email,
   type,
   order,
   token,
   code,
 }: {
   user: BaseUser;
+  email?: string;
   type: MessageType;
-  order?: BaseOrder;
+  order?: BaseOrder | Omit<BaseOrder, 'customerId'>;
   token?: string;
   code?: string;
 }) => {
   const expires = 15;
 
-  if (!user.email) throw createHttpError(400, 'For send email to be required');
+  const currentEmail = email ?? user.email;
+  if (!currentEmail)
+    throw createHttpError(400, 'For send email to be required');
   let config;
 
   if (!isInfoMessage(type)) {
@@ -71,7 +78,7 @@ export const sendVerificationEmail = async ({
   const subject = subjectByType[type as VerificationType];
 
   await sendEmail({
-    to: user.email,
+    to: currentEmail,
     subject,
     html,
   });

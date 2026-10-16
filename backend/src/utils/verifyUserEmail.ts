@@ -1,7 +1,6 @@
-import { prisma } from "../prisma";
+import { prisma } from '../prisma';
 
-
-export const verifyUserEmail = async (userId: number) => {
+export const verifyUserEmail = async (userId: string) => {
   await prisma.user.updateMany({
     where: {
       id: userId,

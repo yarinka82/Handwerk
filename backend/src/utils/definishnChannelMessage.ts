@@ -1,12 +1,21 @@
-import { VerificationType } from '@prisma/client';
-import { BaseOrder, BaseUser, Channel, MessageType } from '../types/types';
+import {
+  BaseOrder,
+  BaseUser,
+  Channel,
+  InfoMessage,
+  MessageType,
+} from '../types/types';
 import createHttpError from 'http-errors';
 import { sendVerificationEmail } from '../service/confirm';
-import { createVerificationToken } from './createVerificationToken';
+import {
+  CreateVerificationToken,
+  createVerificationToken,
+} from './createVerificationToken';
 import { findUserChannel } from './findUserChannel';
+import { sendPushNotification } from './sendPushNotification';
 
-export const isInfoMessage = (type: MessageType) => {
-  if (typeof type === 'object' && type.type === 'INFO') return true;
+export const isInfoMessage = (type: MessageType): type is InfoMessage => {
+  return typeof type === 'object' && type.type === 'INFO';
 };
 
 export const definishnChannelMessage = async ({
@@ -20,7 +29,7 @@ export const definishnChannelMessage = async ({
 }: {
   user: BaseUser;
   type: MessageType;
-  order?: BaseOrder;
+  order?: BaseOrder | Omit<BaseOrder, 'customerId'>;
   inputData?: string;
   channel?: Channel;
   value?: string;
@@ -42,15 +51,28 @@ export const definishnChannelMessage = async ({
   let token;
   let code;
 
+  if (isInfoMessage(type)) {
+    if (order && 'customerId' in order && order.customerId) {
+      await sendPushNotification({
+        customerId: order.customerId,
+        masterId: order.masterId,
+        event: type.event,
+        ...(type.orderId ? { orderId: type.orderId } : {}),
+      });
+    }
+  }
+
   if (!isInfoMessage(type)) {
     const result = await createVerificationToken({
-      channel: preferredChannel as Channel,
-      value: currentValue,
-      type: type as VerificationType,
+      ...(user.id ? { userId: user.id } : {}),
+      ...(preferredChannel ? { channel: preferredChannel as Channel } : {}),
+      ...(currentValue ? { value: currentValue } : {}),
+      type,
       ...(order ? { order } : {}),
       ...(inputData ? { inputData } : {}),
       ...(requestId ? { requestId } : {}),
-    });
+    } as CreateVerificationToken);
+
     token = result.token;
     code = result.code;
   }
@@ -58,9 +80,16 @@ export const definishnChannelMessage = async ({
   const isNotPhoneChannel = true;
 
   if (preferredChannel === 'email' || isNotPhoneChannel) {
+    let email;
+
+    if (type === 'EMAIL_CHANGE') {
+      email = currentValue;
+    }
+
     await sendVerificationEmail({
       user,
       type,
+      ...(email ? { email } : {}),
       ...(order ? { order } : {}),
       ...(token ? { token } : {}),
       ...(code ? { code } : {}),
@@ -80,13 +109,4 @@ export const definishnChannelMessage = async ({
       `[TELEGRAM STUB] Sending message to TG ID ${(user as BaseUser).telegramId}. Type: ${type}`,
     );
   }
-
-  // if (isInfoMessage(type) && order?.customerId) {
-  //   await sendPushNotification({
-  //     customerId: order.customerId,
-  //     masterId: order.masterId,
-  //     event: type.event,
-  //     orderId: type.orderId,
-  //   });
-  // }
 };

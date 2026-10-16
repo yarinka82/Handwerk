@@ -38,6 +38,10 @@ export const authenticate = async (
 
     const session = JSON.parse(rawSession);
 
+    if (!session || typeof session !== 'object' || !session.userId) {
+      return next(createHttpError(401, 'Invalid or corrupted session data'));
+    }
+
     if (session.accessToken !== token) {
       next(createHttpError(401, 'Invalid access token'));
       return;
@@ -50,8 +54,9 @@ export const authenticate = async (
     });
 
     if (!user) {
-      next(createHttpError(401, 'User not found'));
-      return;
+      await redisConnection.del(`session:${sessionId}`);
+      res.clearCookie('sessionId');
+      return next(createHttpError(401, 'User not found, session invalidated'));
     }
 
     req.user = user;

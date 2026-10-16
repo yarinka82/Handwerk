@@ -2,7 +2,7 @@ import { MasterSpecialty, OrderStatus } from '@prisma/client';
 
 export type BaseUser =
   | {
-      id?: number;
+      id?: string;
       email: string;
       phone?: string | null;
       name?: string | null;
@@ -10,7 +10,7 @@ export type BaseUser =
       preferredChannel?: string;
     }
   | {
-      id?: number;
+      id?: string;
       phone: string;
       email?: string | null;
       telegramId?: string | null;
@@ -18,9 +18,9 @@ export type BaseUser =
       preferredChannel?: string;
     }
   | {
-      id?: number;
-      email: string | null;
-      telegramId?: string;
+      id?: string;
+      email?: string | null;
+      telegramId: string;
       phone?: string | null;
       name?: string | null;
       preferredChannel?: string;
@@ -45,11 +45,24 @@ export type VerificationType =
   | 'EMAIL_CONFIRM'
   | 'PASSWORD_RESET'
   | 'PASSWORD_CHANGE'
-  | 'PHONE_CONFIRM';
+  | 'PHONE_CONFIRM'
+  | 'EMAIL_CHANGE'
+  | 'PHONE_CHANGE';
+
+export type ContactChangeType = Extract<
+  VerificationType,
+  'EMAIL_CHANGE' | 'PHONE_CHANGE' | 'PASSWORD_CHANGE'
+>;
+
+export type OtherVerificationType = Exclude<
+  VerificationType,
+  ContactChangeType
+>;
 
 export type BaseOrder = {
-  id?: number;
-  masterId: number;
+  id?: string;
+  customerId: string;
+  masterId: string;
   description: string;
   postalCode: string;
   startAt?: string;
@@ -59,7 +72,7 @@ export type BaseOrder = {
 };
 
 export type Session = {
-  userId: number;
+  userId: string;
   accessToken: string;
   refreshToken: string;
   sessionId: string;
@@ -74,12 +87,19 @@ export type UserAuthInput =
 
 export type Channel = 'email' | 'phone' | 'telegramId' | 'googleId';
 
+export type IdentityChannel = 'email' | 'phone';
+
+export type Identity = {
+  channel: IdentityChannel;
+  value: string;
+};
+
 export type GetOrdersFilter = {
-  userId: number;
+  userId: string;
   date?: string | Date;
   dateDirection?: 'newer' | 'older';
   status?: OrderStatus;
-  masterId?: number;
+  masterId?: string;
   postalCode?: string;
   cancelledReason?: string;
   cancelledById?: string;
@@ -98,7 +118,7 @@ export type InfoEventType =
 export type InfoMessage = {
   type: 'INFO';
   event: InfoEventType;
-  orderId?: number;
+  orderId?: string;
 };
 
 export type MessageType = VerificationType | InfoMessage;
@@ -119,8 +139,8 @@ export type MasterSearchFilters = {
 };
 
 export type MasterSearchRow = {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   speciality: MasterSpecialty;
   rating: number | null;
   minPrice: number | null;
@@ -141,3 +161,22 @@ export type RecurrencePayload = {
 };
 
 export type DayKey = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
+
+export type ResolvedVerification =
+  | {
+      type: ContactChangeType;
+      userId: string;
+      channel?: Channel;
+      value?: string;
+      order?: BaseOrder;
+      inputData?: string;
+      requestId?: string;
+    }
+  | {
+      type: OtherVerificationType;
+      channel: Channel;
+      value: string;
+      order?: BaseOrder;
+      inputData?: string;
+      requestId?: string;
+    };

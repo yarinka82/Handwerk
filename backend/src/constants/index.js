@@ -16,4 +16,6 @@ export const RESERVATION_MINUTES = 15;
 
  export const MAX_ATTEMPTS = 5;
 
- export const ATTEMPTS_TTL = 15 * 60;
+export const ATTEMPTS_TTL = 15 * 60;
+
+export const MAX_DOCUMENTS = 5;

@@ -14,7 +14,7 @@ export const createMasterSchedule = async ({
   userId,
 }: {
   days: Day[];
-  userId: number;
+  userId: string;
 }) => {
   const master = await prisma.masterProfile.findUnique({
     where: {

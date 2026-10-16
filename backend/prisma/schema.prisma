@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id Int @id @unique @default(autoincrement())
+  id String @id @default(uuid(7)) @db.Uuid
   email String? @unique
   emailVerifiedAt DateTime?
   phone String? @unique
@@ -18,19 +18,22 @@ model User {
   name String?
   password String?
   preferredChannel String?
-  verificationToken VerificationToken[]
+  pushToken String?
 
    latitude Decimal?
     longitude Decimal?
 
   master MasterProfile?
   ordersAsCustomer Order[]
-  sessions Session[]
+
+  urgentOffer UrgentOffer[]
+
+  filedComplaints  Complaint[] @relation("ClientComplaints")
 }
 
 model MasterProfile {
-    id Int @id @default(autoincrement())
-    userId Int @unique
+     id String @id  @default(uuid(7)) @db.Uuid
+    userId String @unique @db.Uuid
     user User @relation(fields: [userId], references: [id])
 
     speciality MasterSpecialty
@@ -58,24 +61,27 @@ model MasterProfile {
     orders Order[]
     isActive Boolean@default(false)
 
+    complaints Complaint[]
+
+    urgentOffers OfferMaster[]
+
     @@index([minPrice, maxPrice])
 }
 
 
 model Order {
- id Int @id @default(autoincrement())
- customerId Int
- masterId Int
-
- verificationToken VerificationToken[]
+ id String @id @default(uuid(7)) @db.Uuid
+ customerId String @db.Uuid
+ masterId String @db.Uuid
 
  description String?
+ photo OrderPhoto[]
  postalCode String
  status OrderStatus @default(CREATED)
 
  cancelledReason String?
  dataCancelled DateTime?
- cancelledById Int?
+ cancelledById String?
 
  customerCompleteddAt DateTime?
  masterCompleteddAt DateTime?
@@ -88,6 +94,8 @@ model Order {
 
 timeBlock  TimeBlock?
 createdAt DateTime @default(now())
+
+complaint   Complaint?
 }
 
 
@@ -130,8 +138,8 @@ enum OrderStatus {
 }
 
 model MasterSchedule {
-    id Int @id @default(autoincrement())
-    masterId Int
+    id String @id @default(uuid(7)) @db.Uuid
+    masterId String @db.Uuid
     master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
 
     dayOfWeek DayOfWeek
@@ -143,22 +151,25 @@ model MasterSchedule {
 }
 
 model TimeBlock {
-id Int @id @default(autoincrement())
+id String @id @default(uuid(7)) @db.Uuid
 
-masterId Int
+masterId String @db.Uuid
 master MasterProfile @relation(fields: [masterId], references: [id])
 
-startAt DateTime?
-endAt DateTime?
+startAt DateTime?  @db.Timestamptz(3)
+endAt DateTime?  @db.Timestamptz(3)
 status TimeBlockStatus
 reservationMinutes Int?
-reservationExpiresAt DateTime?
+reservationExpiresAt DateTime?  @db.Timestamptz(3)
 
-orderId Int @unique
-order Order  @relation(fields: [orderId], references: [id])
+
+orderId String? @unique @db.Uuid
+order Order?  @relation(fields: [orderId], references: [id])
+
+offerMasterId String? @unique @db.Uuid
+offerMaster OfferMaster? @relation(fields: [offerMasterId], references: [id])
 
 reason TimeBlockReason?
-
 }
 
 enum TimeBlockReason {
@@ -167,6 +178,7 @@ enum TimeBlockReason {
   BREAK
   DAY_OFF
   OTHER
+  OFFER
 }
 
 enum TimeBlockStatus {
@@ -185,8 +197,8 @@ enum DayOfWeek {
 }
 
 model ScheduleBreak {
-  id String @id @default(uuid())
-  masterId   Int
+  id String @id @default(uuid(7)) @db.Uuid
+  masterId   String @db.Uuid
   master     MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
 
   startTime String
@@ -203,80 +215,54 @@ enum BreakType {
 }
 
 model ServiceArea {
-  id Int @id @default(autoincrement())
+  id String @id @default(uuid(7)) @db.Uuid
  name String
  postalCode String
- radius Float
+ radius Float?
 
-  masterId Int
+  masterId String @db.Uuid
   master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
 
- @@index([masterId, postalCode])
- @@index([postalCode])
+  @@unique([masterId, postalCode, name])
+  @@index([postalCode])
+  @@index([masterId, name])
 }
-
-
-model Session {
-  id Int @id @default(autoincrement())
-
-  userId Int
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  refreshToken String @unique
-  accessToken String @unique
-  accessTokenValidUntil DateTime
-  refreshTokenValidUntil DateTime
-
-  googleAccessToken      String?
-  googleRefreshToken     String?
-
-  telegramId             String?  @unique
-  telegramAuthDate       DateTime?
-}
-
-
-model VerificationToken {
-  id Int @id @default(autoincrement())
-  userId Int
-  user User @relation(fields: [userId], references: [id])
-
-  orderId Int?
-  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  tokenHash String @unique
-  codeHash String?
-  type VerificationType
-  expiresAt  DateTime
-
-  @@unique([userId, type])
-}
-
-enum VerificationType {
-  REGISTER
-  LOGIN
-  REQUEST_CONFIRM
-  ORDER_CONFIRM
-  EMAIL_CONFIRM
-  PASSWORD_RESET
-  PASSWORD_CHANGE
-  PHONE_CONFIRM
-}
-
 
 model MasterDocument {
-  id String @id @default(uuid())
+  id String @id @default(uuid(7)) @db.Uuid
   fileName String
   fileUrl String
   filePublicId String
   mimeType String
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  masterId Int
+  masterId String @db.Uuid
   master MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+   @@index([masterId])
 }
 
+
+model OrderPhoto {
+  id String @id @default(uuid(7)) @db.Uuid
+  fileName String
+  fileUrl String
+  filePublicId String
+  mimeType String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderId String? @db.Uuid
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  urgentOfferId String? @db.Uuid
+  urgentOffer UrgentOffer? @relation(fields: [urgentOfferId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
 
 model ZipCodeDirectory {
   postalCode String @id
@@ -285,4 +271,72 @@ model ZipCodeDirectory {
   longitude  Float
 
   @@index([latitude, longitude])
+}
+
+model Complaint {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  orderId         String        @unique @db.Uuid
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  clientId        String        @db.Uuid
+  client          User          @relation("ClientComplaints", fields: [clientId], references: [id])
+  masterProfileId String        @db.Uuid
+  masterProfile   MasterProfile @relation(fields: [masterProfileId], references: [id], onDelete: Cascade)
+  reason          String
+  description     String?       @db.VarChar(1000)
+  createdAt       DateTime      @default(now())
+
+  @@index([masterProfileId])
+   @@index([clientId])
+}
+
+model UrgentOffer {
+  id String @id @default(uuid(7)) @db.Uuid
+  customerId String @db.Uuid
+
+  description String?
+  photo OrderPhoto[]
+  postalCode String
+  status UrgentStatus @default(CREATED)
+
+  customer User @relation(fields: [customerId], references: [id])
+  offers OfferMaster[]
+
+  createdAt DateTime @default(now())
+
+  cancelledReason String?
+  cancelledAt DateTime?
+}
+
+model OfferMaster {
+  id String @id @default(uuid(7)) @db.Uuid
+  urgentOfferId String @db.Uuid
+  masterId String @db.Uuid
+
+  status MasterOfferStatus @default(SEND)
+  timeBlock  TimeBlock?
+  rejectedReason String?
+
+  urgentOffer UrgentOffer @relation(fields: [urgentOfferId], references: [id], onDelete: Cascade)
+  master MasterProfile @relation(fields: [masterId], references: [id])
+
+  sendAt DateTime @default(now())
+  respondedAt   DateTime?
+
+  @@unique([urgentOfferId, masterId])
+  @@index([masterId, status])
+}
+
+enum UrgentStatus {
+  CREATED
+  SEARCHING
+  MASTER_SELECTED
+  CANCELED
+  EXPIRED
+}
+
+enum MasterOfferStatus {
+  SEND
+  ACCEPTED
+  REJECTED
+  EXPIRED
 }

@@ -1,21 +1,12 @@
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import createHttpError from 'http-errors';
-import { PrismaClient } from '@prisma/client/extension';
 import { configHandwerk } from '../configHandwerk';
 import { redisConnection } from './redis';
-
-const PATH_JSON = path.join(process.cwd(), 'google-oauth.json');
-
-const oauthConfig = JSON.parse(await readFile(PATH_JSON, 'utf-8'));
-
-const prisma = new PrismaClient();
 
 const googleOAuthClient = new OAuth2Client({
   clientId: configHandwerk.clientId as string,
   clientSecret: configHandwerk.clientSecret as string,
-  redirectUri: oauthConfig.web.redirect_uris[0],
+  redirectUri: configHandwerk.googleRedirectUri,
 });
 
 export const generateAuthUrl = () => {

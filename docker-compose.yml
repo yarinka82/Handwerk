@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ./backend
+
+  command: npm run dev
+
+  ports:
+    - "3000:3000"
+
+  env_file:
+    - ./backend/.env
+
+  depends_on:
+    - redis
+
+worker:
+  build:
+    context: ./backend
+
+  command: npm run dev:worker
+  
+  env_file:
+    - ./backend/.env
+
+  depends_on:
+    - redis
+
+redis:
+  image: redis:7-alpine
+
+  ports:
+    - "6379:6379"

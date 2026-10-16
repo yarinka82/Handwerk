@@ -17,12 +17,12 @@ export const validateBody =
       );
     }
 
-    try {
-      const { error, value } = schema.validate(req.body, {
-        abortEarly: false,
-        context: { user: req.user },
-      });
-    } catch (error) {
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      context: { user: req.user },
+    });
+    if (error) {
       const errorMessage = error.details.map((d) => d.message).join(', ');
       return next(createHttpError(400, errorMessage));
     }

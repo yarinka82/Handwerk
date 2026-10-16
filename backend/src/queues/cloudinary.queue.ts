@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { redisConnection } from '../utils/redis.ts';
+import { redisConnection } from '../utils/redis';
 
 export const cloudinaryDeleteQueue = new Queue('cloudinary', {
   connection: redisConnection,

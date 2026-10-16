@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import {
   cancelledOrder,
   confirmCompletedOrder,
-  createOrder,
+  createNewOrder,
   deleteOrder,
   requestConfirmCustomer,
   requestConfirmMaster,
@@ -10,7 +10,7 @@ import {
 } from '../service/order';
 
 export const createOrderController = async (req: Request, res: Response) => {
-  const order = await createOrder({
+  const order = await createNewOrder({
     user: req.user,
     payload: req.body,
   });

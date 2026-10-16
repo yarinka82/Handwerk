@@ -1,6 +1,6 @@
 import { redisConnection } from './redis';
 
-export const resetAllSession = async (userId: number) => {
+export const resetAllSession = async (userId: string) => {
   const userSessionKey = `user:${userId}:sessions`;
 
   const sessionIds = await redisConnection.smembers(userSessionKey);

@@ -6,11 +6,14 @@ import { configHandwerk } from './configHandwerk';
 import router from './router';
 import { notFoundHandler } from './middlewares/notFoundHandler';
 import { errorHandler } from './middlewares/errorHandler';
+import { createDirectories } from './utils/createDirectories';
 
 export const setupServer = () => {
   const app = express();
 
   app.use(cors());
+
+  createDirectories();
 
   const pino = pinoHttp({
     transport: {

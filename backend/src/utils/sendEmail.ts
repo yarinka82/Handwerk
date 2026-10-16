@@ -13,32 +13,6 @@ interface SendMailParams {
   html: string;
 }
 
-// export async function sendEmail({
-//   from = DEFAULT_FROM,
-//   to,
-//   subject,
-//   html,
-// }: SendMailParams) {
-//   try {
-//     const { data, error } = await resend.emails.send({
-//       from,
-//       to,
-//       subject,
-//       html,
-//     });
-
-//     if (error) {
-//       console.error('Error Resend Api: ', error.message);
-//       return { success: false, error };
-//     }
-
-//     return { success: true, id: data.id };
-//   } catch (error) {
-//     console.log(error);
-//     return { success: false, error };
-//   }
-// }
-
 export async function sendEmail({
   from = DEFAULT_FROM,
   to,
@@ -46,4 +20,5 @@ export async function sendEmail({
   html,
 }: SendMailParams) {
   await resendQueue.add('send-email', { from, to, subject, html });
+  console.log('sendEmail:', `from =${from}, to=${to}`);
 }

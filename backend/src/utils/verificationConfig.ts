@@ -3,55 +3,69 @@ export const verificationConfig = {
     template: 'confirm-email.html',
     useLink: true,
     useCode: true,
-    url: "confirm"
+    url: 'confirm',
   },
 
   LOGIN: {
     template: 'confirm-email.html',
     useLink: true,
     useCode: true,
-    url: "confirm"
+    url: 'confirm',
   },
 
   EMAIL_CONFIRM: {
     template: 'confirm-email.html',
     useLink: true,
     useCode: true,
-    url: "confirm-email"
+    url: 'confirm-email',
   },
 
   REQUEST_CONFIRM: {
     template: 'confirm-email.html',
     useLink: true,
     useCode: true,
-    url: "confirm"
+    url: 'confirm',
   },
 
   ORDER_CONFIRM: {
     template: 'confirm-email.html',
     useLink: true,
     useCode: false,
-    url: "confirm"
+    url: 'confirm',
   },
 
-   PHONE_CONFIRM: {
+  PHONE_CONFIRM: {
     template: 'confirm-email.html',
     useLink: false,
     useCode: true,
-    url: "confirm-email"
+    url: 'confirm-email',
   },
 
   PASSWORD_CHANGE: {
     template: 'confirm-email.html',
     useLink: false,
     useCode: true,
-    url: "confirm-password"
+    url: 'confirm-password',
+  },
+
+  EMAIL_CHANGE: {
+    template: 'confirm-email.html',
+    useLink: false,
+    useCode: true,
+    url: 'confirm-email',
+  },
+
+  PHONE_CHANGE: {
+    template: 'confirm-email.html',
+    useLink: false,
+    useCode: true,
+    url: 'confirm-phone',
   },
 
   PASSWORD_RESET: {
     template: 'confirm-email.html',
     useLink: true,
     useCode: true,
-     url: "confirm-password"
+    url: 'confirm-password',
   },
 };

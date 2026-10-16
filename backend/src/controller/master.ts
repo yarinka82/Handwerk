@@ -1,17 +1,24 @@
 import { Request, Response } from 'express';
 import {
-  changeMasterProfile,
   getMasterProfile,
   registrationMaster,
+  updateMasterProfile,
 } from '../service/master';
 
 export const registrationMasterController = async (
   req: Request,
   res: Response,
 ) => {
+  const files = req.files as {
+    photoFile?: Express.Multer.File[];
+    documentFiles?: Express.Multer.File[];
+  };
+
   const data = await registrationMaster({
-    ...req.body,
     userId: req.user.id,
+    ...req.body,
+    photoFile: files.photoFile?.[0],
+    documentFiles: files.documentFiles ?? [],
   });
 
   res.status(201).json({
@@ -21,21 +28,21 @@ export const registrationMasterController = async (
   });
 };
 
-export const changeMasterProfileController = async (
+export const updateMasterProfileController = async (
   req: Request,
   res: Response,
 ) => {
-  const {
-    documentsToDelete = [],
-    newDocuments = [],
-    ...profileData
-  } = req.body;
+  const files = req.files as {
+    photoFile?: Express.Multer.File[];
+    documentFiles?: Express.Multer.File[];
+  };
+  console.log('🚀 ~ updateMasterProfileController ~ files:', files);
 
-  const master = await changeMasterProfile({
+  const master = await updateMasterProfile({
     userId: req.user.id,
-    updateMasterProfile: profileData,
-    documentsToDelete,
-    newDocuments,
+    ...req.body,
+    photoFile: files.photoFile?.[0],
+    newDocuments: files.documentFiles ?? [],
   });
 
   res.status(200).json({

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { verificationServise } from '../service/verificationServise';
+import { verificationService } from '../service/verificationService';
 
 export const verificationController = async (req: Request, res: Response) => {
-  const data = await verificationServise({
+  const data = await verificationService({
     token: req.body.token,
     code: req.body.code,
     refreshToken: req.cookies.refreshToken,

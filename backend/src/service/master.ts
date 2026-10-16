@@ -1,79 +1,145 @@
-import { MasterProfile, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import createHttpError from 'http-errors';
 import { deleteFileFromCloudinary } from '../utils/cloudinary';
-import {  MasterSearchFilters, MasterSearchRow } from '../types/types';
+import { MasterSearchFilters, MasterSearchRow } from '../types/types';
 import { prisma } from '../prisma';
 import { getDayOfWeek } from '../utils/hasFreeTime';
+import { saveFileToCloudinary } from '../utils/saveFileToCloudinary';
+import fs from 'fs/promises';
+import { uploadDocumentsToCloudinary } from '../utils/uploadDocumentsToCloudinary';
+import { MAX_DOCUMENTS } from '../constants';
 
-type DocumentInput = Prisma.MasterDocumentCreateWithoutMasterInput;
+export type RegistrationMasterArgs = Omit<
+  Prisma.MasterProfileCreateWithoutUserInput,
+  'photoUrl' | 'photoPublicId' | 'documents' | 'dateAgreeToTerms'
+> & {
+  userId: string;
+  photoFile?: Express.Multer.File;
+  documentFiles?: Express.Multer.File[];
+};
 
-type MasterProfileCreateInput = Omit<MasterProfile, 'id'> & {
-  documents?: DocumentInput[];
+export type UpdateMasterArgs = Omit<
+  Prisma.MasterProfileUpdateInput,
+  'photoUrl' | 'photoPublicId' | 'documents' | 'dateAgreeToTerms'
+> & {
+  userId: string;
+  photoFile?: Express.Multer.File;
+  newDocuments?: Express.Multer.File[];
+  documentsToDelete?: string[];
 };
 
 export const registrationMaster = async (
-  masterProfile: MasterProfileCreateInput,
+  masterProfile: RegistrationMasterArgs,
 ) => {
-  if (masterProfile.agreedToTerms !== true) {
+  const isAgreed = masterProfile.agreedToTerms === true;
+  console.log('🚀 ~ registrationMaster ~ isAgreed:', isAgreed);
+  if (!isAgreed) {
     throw createHttpError(400, 'Sie müssen den Nutzungsbedingungen zustimmen');
   }
 
-  const { documents, ...profileDate } = masterProfile;
+  const {
+    documentFiles,
+    photoFile,
+    isActive: _,
+    ...profileDate
+  } = masterProfile;
 
-  const data = {
-    ...profileDate,
-    agreedToTerms: true,
-    dateAgreeToTerms: new Date(),
-    isActive: true,
-    documents:
-      documents && documents.length > 0
+  let photoUrl: string | null = null;
+  let photoPublicId: string | null = null;
+
+  try {
+    console.log('🚀 ~ registrationMaster ~ photoFile:', photoFile);
+    if (photoFile) {
+      const uploadResult = await saveFileToCloudinary(photoFile);
+      console.log('🚀 ~ registrationMaster ~ uploadResult:', uploadResult);
+
+      photoUrl = uploadResult.secure_url;
+      photoPublicId = uploadResult.public_id;
+    }
+
+    const uploadedDocuments = await uploadDocumentsToCloudinary(documentFiles);
+
+    const hasDocuments = uploadedDocuments.length > 0;
+    const currentIsActive = hasDocuments
+      ? masterProfile.isActive !== false
+      : false;
+    const data = {
+      ...profileDate,
+      agreedToTerms: true,
+      dateAgreeToTerms: new Date(),
+      isActive: currentIsActive,
+      photoUrl,
+      photoPublicId,
+      documents: hasDocuments
         ? {
             createMany: {
-              data: documents,
+              data: uploadedDocuments,
             },
           }
         : {},
-  };
+    };
 
-  const master = await prisma.masterProfile.create({
-    data,
-    include: {
-      documents: true,
-    },
-  });
+    const master = await prisma.masterProfile.create({
+      data,
+      include: {
+        documents: true,
+      },
+    });
 
-  return master;
+    return master;
+  } catch (error) {
+    if (photoFile) await fs.unlink(photoFile.path).catch(() => {});
+    if (documentFiles) {
+      for (const file of documentFiles) {
+        await fs.unlink(file.path).catch(() => {});
+      }
+    }
+    throw error;
+  }
 };
 
-export const changeMasterProfile = async ({
-  userId,
-  updateMasterProfile,
-  documentsToDelete,
-  newDocuments,
-}: {
-  userId: number;
-  updateMasterProfile: Prisma.MasterProfileUpdateInput;
-  documentsToDelete?: string[];
-  newDocuments?: Prisma.MasterDocumentCreateWithoutMasterInput[];
-}) => {
-  const { agreedToTerms: _, ...updateData } = updateMasterProfile;
+export const updateMasterProfile = async (payload: UpdateMasterArgs) => {
+  const {
+    userId,
+    photoFile,
+    newDocuments,
+    documentsToDelete,
+    agreedToTerms: _,
+    isActive: __,
+    ...updateData
+  } = payload;
 
   return await prisma.$transaction(async (tx) => {
+    let realDeletedCount = 0;
+    const addedCount = newDocuments?.length || 0;
+
     const master = await tx.masterProfile.findUnique({
       where: {
         userId,
+      },
+      include: {
+        _count: {
+          select: {
+            documents: true,
+            complaints: true,
+          },
+        },
       },
     });
 
     if (!master)
       throw createHttpError(404, 'Not profile master for current user');
+    let photoUrl = master.photoUrl;
+    let photoPublicId = master.photoPublicId;
 
-    if (
-      master.photoPublicId &&
-      updateData.photoUrl &&
-      updateData.photoUrl !== master.photoUrl
-    ) {
-      await deleteFileFromCloudinary(master.photoPublicId, 'image/jpeg');
+    if (photoFile) {
+      if (master.photoPublicId) {
+        await deleteFileFromCloudinary(master.photoPublicId, 'image/jpeg');
+      }
+
+      const uploadResult = await saveFileToCloudinary(photoFile);
+      photoUrl = uploadResult.secure_url;
+      photoPublicId = uploadResult.public_id;
     }
 
     if (documentsToDelete && documentsToDelete.length > 0) {
@@ -84,34 +150,58 @@ export const changeMasterProfile = async ({
         },
       });
 
+      realDeletedCount = dbDocumentDelete.length;
+
       for (const doc of dbDocumentDelete) {
         await deleteFileFromCloudinary(doc.filePublicId, doc.mimeType);
       }
+
+      await tx.masterDocument.deleteMany({
+        where: {
+          masterId: master.id,
+          filePublicId: {
+            in: documentsToDelete,
+          },
+        },
+      });
     }
 
-if (documentsToDelete) {
-    await tx.masterDocument.deleteMany({
-      where: {
-        masterId: master.id,
-        filePublicId: {
-          in: documentsToDelete,
-        },
-      },
-    });
-}
+    const uploadedDocuments = await uploadDocumentsToCloudinary(newDocuments);
+
+    const totalDocumentsCount =
+      master._count.documents - realDeletedCount + addedCount;
+
+    if (totalDocumentsCount > MAX_DOCUMENTS) {
+      throw createHttpError(400, `Maximum ${MAX_DOCUMENTS} documents allowed`);
+    }
+    const hasDocuments = totalDocumentsCount > 0;
+    const isBanned = master._count.complaints >= 3;
+    let finalIsActive;
+
+    if (isBanned) {
+      finalIsActive = false;
+    } else {
+      const currenActive = payload.isActive ?? master.isActive;
+
+      finalIsActive = hasDocuments ? currenActive !== false : false;
+    }
+
     const data = {
       ...updateData,
+      isActive: finalIsActive,
+      photoUrl,
+      photoPublicId,
       documents:
-        newDocuments && newDocuments.length > 0
+        uploadedDocuments.length > 0
           ? {
               createMany: {
-                data: newDocuments,
+                data: uploadedDocuments,
               },
             }
           : {},
     };
 
-    const updateMaster = await prisma.masterProfile.update({
+    const updateMaster = await tx.masterProfile.update({
       where: {
         userId,
       },
@@ -124,7 +214,7 @@ if (documentsToDelete) {
   });
 };
 
-export const getMasterProfile = async (userId: number) => {
+export const getMasterProfile = async (userId: string) => {
   const master = await prisma.masterProfile.findUnique({
     where: {
       userId,
@@ -134,18 +224,17 @@ export const getMasterProfile = async (userId: number) => {
   return master;
 };
 
+const geocodePostalCode = async (postalCode: string) => {
+  const origin = await prisma.zipCodeDirectory.findUnique({
+    where: {
+      postalCode,
+    },
+  });
+  if (!origin)
+    throw createHttpError(404, 'Zip code not found or not supported');
 
-  const geocodePostalCode = async (postalCode: string) => {
-    const origin = await prisma.zipCodeDirectory.findUnique({
-      where: {
-        postalCode,
-      },
-    });
-    if (!origin)
-      throw createHttpError(404, 'Zip code not found or not supported');
-
-    return origin;
-  };
+  return origin;
+};
 
 export const searchMasters = async (filters: MasterSearchFilters) => {
   const {
@@ -229,7 +318,6 @@ export const searchMasters = async (filters: MasterSearchFilters) => {
     `
     : Prisma.empty;
 
-
   const countResult = await prisma.$queryRaw<{ count: bigint }[]>`
     SELECT COUNT(DISTINCT m.id) AS count
     FROM "MasterProfile" m
@@ -239,7 +327,6 @@ export const searchMasters = async (filters: MasterSearchFilters) => {
     ${timeFilter}
   `;
   const totalCount = Number(countResult[0]?.count ?? 0);
-
 
   let orderByClause: Prisma.Sql;
   if (sortBy === 'distance' && origin) {

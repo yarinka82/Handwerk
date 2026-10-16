@@ -5,7 +5,7 @@ import { BaseOrder, BaseUser, Channel, GetOrdersFilter } from '../types/types';
 import { RESERVATION_MINUTES } from '../constants';
 import { definishnChannelMessage } from '../utils/definishnChannelMessage';
 import { randomUUID } from 'node:crypto';
-import { verificationServise } from './verificationServise';
+import { verificationService } from './verificationService';
 import { sanitizeUser } from '../utils/sanitiseUser';
 import { reservationQueue } from '../queues/reservationQueue';
 import { hasFreeTime } from '../utils/hasFreeTime';
@@ -13,7 +13,7 @@ import { hasFreeTime } from '../utils/hasFreeTime';
 type PayloadCreateOrder = {
   channel: Channel;
   value: string;
-  masterId: number;
+  masterId: string;
   description: string;
   postalCode: string;
   startAt?: string;
@@ -37,16 +37,6 @@ export const createNewOrder = async ({
 
   if (user && user.id) {
     const result = await prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({
-        data: {
-          customerId: user.id,
-          masterId,
-          description,
-          postalCode,
-          status: 'BOOKING',
-        },
-      });
-
       if (startAt && endAt) {
         const conflict = await tx.timeBlock.findFirst({
           where: {
@@ -59,38 +49,61 @@ export const createNewOrder = async ({
         if (conflict) throw createHttpError(409, 'Time slot is already taken');
       }
 
-      const timeBlock = await tx.timeBlock.create({
-        data: {
-          masterId,
-          orderId: order.id,
-          startAt: startAt ? new Date(startAt) : null,
-          endAt: endAt ? new Date(endAt) : null,
-          status: 'RESERVED',
-          reason: 'ORDER',
-          reservationMinutes: RESERVATION_MINUTES,
-          reservationExpiresAt: new Date(
-            Date.now() + RESERVATION_MINUTES * 60 * 1000,
-          ),
+      const hasDates = Boolean(startAt && endAt);
+
+      const orderData: Prisma.OrderUncheckedCreateInput = {
+        customerId: user.id,
+        masterId,
+        description,
+        postalCode,
+        status: 'BOOKING',
+      };
+
+      if (hasDates) {
+        orderData.timeBlock = {
+          create: {
+            masterId,
+            startAt: new Date(startAt!),
+            endAt: new Date(endAt!),
+            status: 'RESERVED',
+            reason: 'ORDER',
+            reservationMinutes: RESERVATION_MINUTES,
+            reservationExpiresAt: new Date(
+              Date.now() + RESERVATION_MINUTES * 60 * 1000,
+            ),
+          },
+        };
+      }
+      const newOrder = await tx.order.create({
+        data: orderData,
+        include: {
+          timeBlock: true,
         },
       });
+
+      const order = newOrder as Prisma.OrderGetPayload<{
+        include: { timeBlock: true };
+      }>;
 
       return {
         success: true,
         redirect: `/orders/${order.id}`,
         userId: user.id,
         order,
-        timeBlock,
+        timeBlock: order.timeBlock,
       };
     });
 
-    await reservationQueue.add(
-      'expire-reservation',
-      { timeBlockId: result?.timeBlock.id, orderId: result.order.id },
-      {
-        delay: RESERVATION_MINUTES * 60 * 1000,
-        jobId: `expire: ${result?.order.id}`,
-      },
-    );
+    if (result.timeBlock) {
+      await reservationQueue.add(
+        'expire-reservation',
+        { timeBlockId: result?.timeBlock?.id, orderId: result.order.id },
+        {
+          delay: RESERVATION_MINUTES * 60 * 1000,
+          jobId: `expire:${result?.order.id}`,
+        },
+      );
+    }
 
     return result;
   }
@@ -116,7 +129,7 @@ export const createNewOrder = async ({
 
   const requestId = randomUUID();
 
-  const createOrder: BaseOrder = {
+  const createOrder: Omit<BaseOrder, 'customerId'> = {
     masterId,
     description,
     postalCode,
@@ -149,7 +162,7 @@ export const requestConfirmCustomer = async ({
   token?: string;
   requestId: string;
 }) => {
-  const verification = await verificationServise({
+  const verification = await verificationService({
     expectedType: 'REQUEST_CONFIRM',
     requestId,
     channel,
@@ -170,149 +183,157 @@ export const requestConfirmMaster = async ({
   endAt,
   reservMinutes,
 }: {
-  userId: number;
-  orderId: number;
+  userId: string;
+  orderId: string;
   startAt: string;
   endAt: string;
   reservMinutes?: number;
 }) => {
-  let confirmOrder;
-
-  const order = await prisma.order.findUnique({
-    where: {
-      id: orderId,
-    },
-    include: {
-      masterId: true,
-      master: {
-        select: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: {
+        id: orderId,
+      },
+      include: {
+        masterId: true,
+        master: {
+          select: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
             },
           },
         },
+        customer: true,
+        timeBlock: true,
       },
-      customer: true,
-      timeBlock: {
-        select: {
-          id: true,
-          masterId: true,
-          startAt: true,
-          endAt: true,
-        },
-      },
-    },
-  });
+    });
 
-  if (!order || order.master.user.id !== userId)
-    throw createHttpError(404, 'Order not found');
+    if (!order || order.master.user.id !== userId)
+      throw createHttpError(404, 'Order not found');
 
-  if (startAt && endAt) {
+    const currentMasterId = order.masterId;
+    const timeBlockId = order.timeBlock?.id;
+
     const free = await hasFreeTime({
-      masterId: order.masterId,
+      masterId: currentMasterId,
       startAt,
       endAt,
     });
     if (!free) throw createHttpError(409, 'Time slot is not available');
-  }
 
-  const sameTime =
-    order.timeBlock?.startAt?.getTime() === new Date(startAt).getTime();
-  if (order.timeBlock && sameTime) {
-    const timeBlockId = order.timeBlock.id;
+    const sameTime =
+      order.timeBlock?.startAt?.getTime() === new Date(startAt).getTime();
 
-    confirmOrder = await prisma.$transaction(async (tx) => {
+    const conflict = timeBlockId
+      ? await tx.timeBlock.findFirst({
+          where: {
+            masterId: currentMasterId,
+            id: { not: timeBlockId },
+            status: { in: ['RESERVED', 'BLOCKED'] },
+            startAt: { lt: new Date(endAt) },
+            endAt: { gt: new Date(startAt) },
+          },
+        })
+      : false;
+
+    if (conflict) throw createHttpError(409, 'Time slot is already taken');
+
+    if (order.timeBlock && sameTime) {
       const updatedOrder = await tx.order.update({
         where: {
           id: orderId,
         },
         data: {
           status: 'CONFIRMED',
+          timeBlock: {
+            update: {
+              startAt: new Date(startAt),
+              endAt: new Date(endAt),
+              status: 'BLOCKED',
+              reason: 'ORDER',
+              reservationExpiresAt: null,
+            },
+          },
+        },
+        include: {
+          timeBlock: true,
         },
       });
 
-      const conflict = await tx.timeBlock.findFirst({
-        where: {
-          masterId: order.masterId,
-          id: { not: timeBlockId },
-          status: { in: ['RESERVED', 'BLOCKED'] },
-          startAt: { lt: new Date(endAt) },
-          endAt: { gt: new Date(startAt) },
-        },
-      });
-      if (conflict) throw createHttpError(409, 'Time slot is already taken');
-
-      const timeBlock = await tx.timeBlock.update({
-        where: {
-          orderId: order.id,
-        },
-        data: {
-          startAt: new Date(startAt),
-          endAt: new Date(endAt),
-          status: 'BLOCKED',
-          reason: 'ORDER',
-          reservationExpiresAt: null,
-        },
-      });
-      return { updatedOrder, timeBlock };
-    });
-    await reservationQueue.remove(`expire: ${order.id}`);
-  } else {
-    const reservationMinutes = reservMinutes ?? 15;
-    const reservationExpiresAt = new Date(
-      Date.now() + reservationMinutes * 60 * 1000,
-    );
-
-    confirmOrder = await prisma.$transaction(async (tx) => {
+      return {
+        actionType: 'CONFIRMED' as const,
+        order: updatedOrder,
+        customerData: order.customer,
+      };
+    } else {
+      const reservationMinutes = reservMinutes ?? 15;
+      const reservationExpiresAt = new Date(
+        Date.now() + reservationMinutes * 60 * 1000,
+      );
       const updatedOrder = await tx.order.update({
         where: {
           id: orderId,
         },
         data: {
           status: 'PROPOSED',
+          timeBlock: {
+            update: {
+              startAt: new Date(startAt),
+              endAt: new Date(endAt),
+              status: 'RESERVED',
+              reason: 'ORDER',
+              reservationExpiresAt,
+            },
+          },
+        },
+        include: {
+          timeBlock: true,
         },
       });
 
-      const timeBlock = await tx.timeBlock.update({
-        where: {
-          orderId: order.id,
-        },
-        data: {
-          ...(startAt ? { startAt: new Date(startAt) } : {}),
-          endAt: new Date(endAt),
-          status: 'RESERVED',
-          reason: 'ORDER',
-          reservationExpiresAt,
-        },
-      });
+      return {
+        actionType: 'PROPOSED' as const,
+        order: updatedOrder,
+        customerData: order.customer,
+        reservationMinutes,
+      };
+    }
+  });
 
-      await reservationQueue.remove(`expire: ${order.id}`);
-      await reservationQueue.add(
-        'expire-reservation',
-        { timeBlockId: timeBlock.id, orderId: order.id },
-        {
-          delay: RESERVATION_MINUTES * 60 * 1000,
-          jobId: `expire: ${order.id}`,
-        },
-      );
+  await reservationQueue.remove(`expire:${result.order.id}`);
 
-      return { updatedOrder, timeBlock };
-    });
+  if (result.actionType === 'PROPOSED' && result.order.timeBlock) {
+    await reservationQueue.add(
+      'expire-reservation',
+      { timeBlockId: result.order.timeBlock.id, orderId: result.order.id },
+      {
+        delay: RESERVATION_MINUTES * 60 * 1000,
+        jobId: `expire: ${result.order.id}`,
+      },
+    );
   }
 
   await definishnChannelMessage({
-    user: sanitizeUser(order.customer) as BaseUser,
-    type: 'InfoMessage',
-    order: confirmOrder.updatedOrder as BaseOrder,
+    user: sanitizeUser(result.customerData) as BaseUser,
+    type: {
+      type: 'INFO',
+      event:
+        result.actionType === 'CONFIRMED'
+          ? 'ORDER_CONFIRMED'
+          : 'ORDER_TIME_PROPOSED',
+      orderId: result.order.id,
+    },
+    order: result.order as BaseOrder,
   });
 
   return {
     success: true,
-    order: confirmOrder.updatedOrder,
-    timeBlock: confirmOrder.timeBlock,
+    order: result.order,
+    timeBlock: result.order.timeBlock,
   };
 };
 
@@ -320,40 +341,47 @@ export const requestReservedOrder = async ({
   orderId,
   userId,
 }: {
-  orderId: number;
-  userId: number;
+  orderId: string;
+  userId: string;
 }) => {
   const order = await findOrderById(orderId);
 
   if (order.customerId !== userId)
     throw createHttpError(403, 'You are not allowed to confirm this order');
 
-  const confirm = await prisma.$transaction(async (tx) => {
-    const timeBlock = await tx.timeBlock.update({
-      where: {
-        orderId,
+  const confirmOrder = await prisma.order.update({
+    where: {
+      id: orderId,
+    },
+    data: {
+      status: 'CONFIRMED',
+      timeBlock: {
+        update: {
+          status: 'BLOCKED',
+        },
       },
-      data: {
-        status: 'BLOCKED',
-      },
-    });
+    },
+    include: {
+      timeBlock: true,
+    },
+  });
 
-    const confirmOrder = await tx.order.update({
-      where: {
-        id: orderId,
-      },
-      data: {
-        status: 'CONFIRMED',
-      },
-    });
+  await reservationQueue.remove(`expire:${order.id}`);
 
-    return { timeBlock, confirmOrder };
+  await definishnChannelMessage({
+    user: sanitizeUser(order.master.user) as BaseUser,
+    type: {
+      type: 'INFO',
+      event: 'ORDER_CONFIRMED',
+      orderId: order.id,
+    },
+    order: confirmOrder as BaseOrder,
   });
 
   return {
     success: true,
-    timeBlock: confirm.timeBlock,
-    order: confirm.confirmOrder,
+    timeBlock: confirmOrder.timeBlock,
+    order: confirmOrder,
   };
 };
 
@@ -361,8 +389,8 @@ export const deleteOrder = async ({
   orderId,
   userId,
 }: {
-  orderId: number;
-  userId: number;
+  orderId: string;
+  userId: string;
 }) => {
   const order = await findOrderById(orderId);
 
@@ -393,17 +421,20 @@ export const deleteOrder = async ({
   return newOrder;
 };
 
-export const findOrderById = async (orderId: number) => {
+export const findOrderById = async (orderId: string) => {
   const order = await prisma.order.findUnique({
     where: {
       id: orderId,
     },
     include: {
       master: {
-        select: {
-          userId: true,
+        include: {
+          id: true,
+          user: true,
         },
       },
+      customer: true,
+      timeBlock: true,
     },
   });
 
@@ -419,8 +450,8 @@ export const cancelledOrder = async ({
   userId,
   cancelledReason,
 }: {
-  orderId: number;
-  userId: number;
+  orderId: string;
+  userId: string;
   cancelledReason: string;
 }) => {
   const order = await findOrderById(orderId);
@@ -433,11 +464,17 @@ export const cancelledOrder = async ({
       id: orderId,
     },
     data: {
+      status: 'CANCELED',
       cancelledReason,
       dataCancelled: new Date(Date.now()),
       cancelledById: userId,
+      timeBlock: {
+        delete: true,
+      },
     },
   });
+
+  await reservationQueue.remove(`expire:${order.id}`);
 
   return data;
 };
@@ -446,8 +483,8 @@ export const confirmCompletedOrder = async ({
   orderId,
   userId,
 }: {
-  orderId: number;
-  userId: number;
+  orderId: string;
+  userId: string;
 }) => {
   const order = await findOrderById(orderId);
 

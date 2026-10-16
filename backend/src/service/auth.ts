@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { sendEmail } from '../utils/sendEmail';
 import { randomBytes } from 'node:crypto';
 import { ONE_DAY, THIRTY_DAY } from '../constants';
-import { verificationServise } from './verificationServise';
+import { verificationService } from './verificationService';
 import { BaseUser, Channel } from '../types/types';
 import { redisConnection } from '../utils/redis';
 import { resetAllSession } from '../utils/resetAllSession';
@@ -12,23 +12,20 @@ import { sanitizeUser } from '../utils/sanitiseUser';
 import { Prisma, User } from '@prisma/client';
 import { definishnChannelMessage } from '../utils/definishnChannelMessage';
 
-type RegisterPayload =
-  | {
-      email: string;
-      phone: never;
-      password: string;
-      name?: string;
-    }
-  | {
-      email: never;
-      phone: string;
-      password: string;
-      name?: string;
-    };
+type RegisterPayload = {
+  identifier: {
+    channel: 'email' | 'phone';
+    value: string;
+  };
+  password: string;
+  name?: string;
+};
 
 export type ResetPasswordPayload = {
-  channel: Channel;
-  value: string;
+  identifier: {
+    channel: 'email' | 'phone';
+    value: string;
+  };
   password: string;
   token?: string;
   code?: string;
@@ -36,23 +33,24 @@ export type ResetPasswordPayload = {
 
 type ChangeUserData = {
   name?: string;
-  email?: string;
-  password?: string;
-  phone?: string;
+  preferredChannel?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 export const registerUser = async (payload: RegisterPayload) => {
-  const whereUser = payload.email
-    ? { email: payload.email }
-    : { phone: payload.phone };
+  const { channel, value } = payload.identifier;
+
+  const whereUser = channel === 'email' ? { email: value } : { phone: value };
 
   const user = await prisma.user.findUnique({
     where: whereUser,
   });
 
-  const messageErr = payload.email
-    ? 'Email is already in use'
-    : 'Phone number is already in use';
+  const messageErr =
+    channel === 'email'
+      ? 'Email is already in use'
+      : 'Phone number is already in use';
 
   if (user) {
     throw createHttpError(409, 'Conflict error', {
@@ -65,22 +63,22 @@ export const registerUser = async (payload: RegisterPayload) => {
   const encryptedPassword = await bcrypt.hash(payload.password, 10);
 
   const data = {
-    ...(payload.email ? { email: payload.email } : {}),
-    ...(payload.phone ? { phone: payload.phone } : {}),
+    ...(channel === 'email' ? { email: value } : {}),
+    ...(channel === 'phone' ? { phone: value } : {}),
     password: encryptedPassword,
-    name: payload.name ?? payload.email.split('@')[0] ?? null,
-    preferredChannel: payload.email ? 'email' : 'phone',
+    name: payload.name ?? value.split('@')[0] ?? null,
+    preferredChannel: channel === 'email' ? 'email' : 'phone',
   };
 
   const newUser = await prisma.user.create({
     data,
   });
 
-  if (payload.email) {
+  if (channel === 'email') {
     await sendEmail({
-      to: payload.email,
+      to: value,
       subject: 'Willkommen bei AI Handwerk!',
-      html: `<p>Hallo, ${payload.name ?? payload.email.split('@')[0]}</p>
+      html: `<p>Hallo, ${payload.name ?? value.split('@')[0]}</p>
     <p>Herzlichen Glückwunsch zu deiner erfolgreichen Registrierung!</p>
     <p>Wir freuen uns, dich in unserer Community begrüßen zu dürfen.</p>
     <p>Viele Grüße,<br/>Dein AI Handwerk Team</p>`,
@@ -92,15 +90,15 @@ export const registerUser = async (payload: RegisterPayload) => {
 };
 
 export const loginUser = async (payload: RegisterPayload) => {
-  const whereUser = payload.email
-    ? { email: payload.email }
-    : { phone: payload.phone };
+  const { channel, value } = payload.identifier;
+
+  const whereUser = channel === 'email' ? { email: value } : { phone: value };
 
   const user = await prisma.user.findUnique({
     where: whereUser,
   });
 
-  if (!user) throw createHttpError(401, 'User not found');
+  if (!user) throw createHttpError(401, 'Unauthorized');
 
   if (!user.password) throw createHttpError(401, 'User has no password set');
 
@@ -130,7 +128,7 @@ export const logoutUser = async ({
     .exec();
 };
 
-export const createSession = async (userId: number) => {
+export const createSession = async (userId: string) => {
   const sessionId = randomBytes(16).toString('hex');
   const accessToken = randomBytes(32).toString('base64url');
   const refreshToken = randomBytes(32).toString('base64url');
@@ -213,7 +211,7 @@ export const requestResetPassword = async ({
     where: queryWhere,
   });
 
-  if (!user) throw createHttpError(401, 'User not found');
+  if (!user) return { success: true };
 
   await definishnChannelMessage({
     user: user as BaseUser,
@@ -224,9 +222,10 @@ export const requestResetPassword = async ({
 };
 
 export const resetPassword = async (payload: ResetPasswordPayload) => {
-  const { token, code, password, channel, value } = payload;
+  const { token, code, password, identifier } = payload;
+  const { channel, value } = identifier;
 
-  const verification = await verificationServise({
+  const verification = await verificationService({
     ...(token ? { token } : {}),
     ...(code ? { code } : {}),
     channel,
@@ -268,7 +267,7 @@ export const requestQuickLogin = async ({
     where: queryWhere,
   });
 
-  if (!user) throw createHttpError(401, 'User not found');
+  if (!user) throw createHttpError(401, 'Unauthorized');
 
   await definishnChannelMessage({
     channel,
@@ -280,26 +279,33 @@ export const requestQuickLogin = async ({
 };
 
 export const quickLogin = async ({
-  channel,
-  value,
+  identifier,
   token,
   code,
 }: {
-  value: string;
-  channel: Channel;
+  identifier: {
+    value: string;
+    channel: Channel;
+  };
   token?: string;
   code: string;
 }) => {
-  const verification = await verificationServise({
+  const { channel, value } = identifier;
+
+  const verification = await verificationService({
     expectedType: 'LOGIN',
     channel,
     value,
     ...(code ? { code } : {}),
     ...(token ? { token } : {}),
   });
+  console.log('🚀 ~ quickLogin ~ verification:', verification);
 
   if (!verification.session || !verification.data)
-    throw createHttpError(404, 'Code not valid or expired');
+    throw createHttpError(
+      401,
+      'Authentication failed: session could not be established',
+    );
 
   return {
     data: verification.data,
@@ -314,6 +320,8 @@ export const requestQuickRegister = async ({
   channel: Channel;
   value: string;
 }) => {
+  console.log('🚀 ~ requestQuickRegister ~ value:', value);
+  console.log('🚀 ~ requestQuickRegister ~channel:', channel);
   const prismaData = {
     [channel]: value,
   } as unknown as Prisma.UserWhereUniqueInput;
@@ -369,17 +377,20 @@ export const requestQuickRegister = async ({
 };
 
 export const confirmQuickRegister = async ({
-  channel,
-  value,
+  identifier,
   code,
   token,
 }: {
-  channel: Channel;
-  value: string;
+  identifier: {
+    channel: Channel;
+    value: string;
+  };
   code?: string;
   token?: string;
 }) => {
-  const { data, session } = await verificationServise({
+  const { channel, value } = identifier;
+
+  const { data, session } = await verificationService({
     channel,
     value,
     expectedType: 'REGISTER',
@@ -387,8 +398,7 @@ export const confirmQuickRegister = async ({
     ...(token ? { token } : {}),
   });
 
-  if (!data || !session)
-    throw createHttpError(401, 'Verification failed or session expired');
+  if (!data || !session) throw createHttpError(401, 'Unauthorized');
 
   return {
     data,
@@ -401,45 +411,26 @@ export const changeUserData = async ({
   userId,
 }: {
   payload: ChangeUserData;
-  userId: number;
+  userId: string;
 }) => {
-  if (payload.email) {
-    const existingEmailUser = await prisma.user.findFirst({
-      where: {
-        email: payload.email,
-        id: {
-          not: userId,
-        },
-      },
-    });
+  // if (payload.phone) {
+  //   const existingPhoneUser = await prisma.user.findFirst({
+  //     where: {
+  //       phone: payload.phone,
+  //       id: {
+  //         not: userId,
+  //       },
+  //     },
+  //   });
 
-    if (existingEmailUser) {
-      throw createHttpError(
-        409,
-        'Conflict error',
-        'This email address is already in use by another account',
-      );
-    }
-  }
+  //   if (existingPhoneUser)
+  //     throw createHttpError(
+  //       409,
+  //       'This phone number is already in use by another account',
+  //     );
+  // }
 
-  if (payload.phone) {
-    const existingPhoneUser = await prisma.user.findFirst({
-      where: {
-        phone: payload.phone,
-        id: {
-          not: userId,
-        },
-      },
-    });
-
-    if (existingPhoneUser)
-      throw createHttpError(
-        409,
-        'This phone number is already in use by another account',
-      );
-  }
-
-  const data: Record<string, string | null> = {};
+  const data: Record<string, string | number | null> = {};
 
   for (const [key, value] of Object.entries(payload)) {
     if (value == null) continue;
@@ -447,13 +438,13 @@ export const changeUserData = async ({
     data[key] = value;
   }
 
-  if (payload.email) {
-    data.emailVerifiedAt = null;
-  }
+  // if (payload.email) {
+  //   data.emailVerifiedAt = null;
+  // }
 
-  if (payload.phone) {
-    data.phoneVerifiedAt = null;
-  }
+  // if (payload.phone) {
+  //   data.phoneVerifiedAt = null;
+  // }
 
   const user = await prisma.user.update({
     where: {
@@ -490,7 +481,7 @@ export const requestConfirmEmailOrPhone = async ({
     if (!user.phone)
       throw createHttpError(400, 'Phone number is missing in your profile');
     if (user.phoneVerifiedAt)
-      throw createHttpError(400, 'Email is already verified');
+      throw createHttpError(400, 'Phone is already verified');
 
     const data = await definishnChannelMessage({
       channel: type,
@@ -514,9 +505,9 @@ export const confirmEmailOrPhone = async ({
 }) => {
   const value = type === 'email' ? user.email : user.phone;
 
-  if (!value) throw createHttpError(401,`For confirm ${type} value may be required`)
+  if (!value) throw createHttpError(400, `${type} value is required`);
 
-  const verification = await verificationServise({
+  const verification = await verificationService({
     userId: user.id,
     value,
     expectedType: type === 'email' ? 'EMAIL_CONFIRM' : 'PHONE_CONFIRM',
@@ -524,7 +515,7 @@ export const confirmEmailOrPhone = async ({
     ...(code ? { code } : {}),
   });
 
-  if (!verification) throw createHttpError(401, 'Problem verification');
+  if (!verification) throw createHttpError(401, 'Unauthorized');
 
   if (type === 'email') {
     await prisma.user.update({
@@ -558,9 +549,20 @@ export const requestChangePassword = async ({
 }) => {
   if (!user.email && !user.phone)
     throw createHttpError(
-      401,
+      400,
       'For change password may be email or phone available',
     );
+
+  const isOldPassword = user.password
+    ? await bcrypt.compare(password, user.password)
+    : false;
+
+  if (isOldPassword)
+    throw createHttpError(
+      400,
+      'The new password and the old password  must not match',
+    );
+
   const encryptedPassword = await bcrypt.hash(password, 10);
 
   const data = await definishnChannelMessage({
@@ -577,24 +579,21 @@ export const changePassword = async ({
   code,
   token,
 }: {
-  userId: number;
+  userId: string;
   code: string;
   token?: string;
 }) => {
-  const verification = await verificationServise({
+  console.log('🚀 ~ changePassword ~ userId:', userId);
+  const verification = await verificationService({
     userId,
     code,
     ...(token ? { token } : {}),
     expectedType: 'PASSWORD_CHANGE',
   });
+  console.log('🚀 ~ changePassword ~ verification:', verification);
 
-  if (
-    !verification ||
-    !verification.data ||
-    !verification.data.userId ||
-    !verification.session
-  ) {
-    throw createHttpError(401, 'Problem verification');
+  if (!verification || !verification.data || !verification.data.userId) {
+    throw createHttpError(401, 'Unauthorized');
   }
 
   const savedHash = verification.password;
@@ -607,7 +606,7 @@ export const changePassword = async ({
 
   const targetUserId = verification.data.userId;
   if (!targetUserId)
-    throw createHttpError(401, 'Problem verification: User ID missing');
+    throw createHttpError(401, 'Unauthorized: User ID missing');
 
   await prisma.user.update({
     where: {
@@ -627,7 +626,82 @@ export const changePassword = async ({
   };
 };
 
-export const getUserInfo = async (id: number) => {
+export const requestChangeEmailOrPhone = async ({
+  payload,
+  user,
+}: {
+  payload: {
+    password: string;
+    channel: 'email' | 'phone';
+    value: string;
+  };
+  user: User;
+}) => {
+  const { channel, value, password } = payload;
+
+  if (!user.password) {
+    throw createHttpError(
+      400,
+      'Password must be set before changing email or phone',
+    );
+  }
+  if (value === user[channel]) {
+    throw createHttpError(400, `${channel} and new ${channel} must not match`);
+  }
+  const existingUser = await prisma.user.findFirst({
+    where: {
+      [channel]: value,
+    },
+  });
+
+  if (existingUser) {
+    throw createHttpError(
+      409,
+      'Conflict error',
+      `This ${channel}  is already in use by another account`,
+    );
+  }
+
+  const isValid = await bcrypt.compare(password, user.password);
+  console.log('🚀 ~ requestChangeEmail ~ isValid:', isValid);
+
+  if (!isValid) {
+    throw createHttpError(401, 'Password wrong');
+  }
+
+  await definishnChannelMessage({
+    channel,
+    value,
+    user: user as BaseUser,
+    type: channel === 'email' ? 'EMAIL_CHANGE' : 'PHONE_CHANGE',
+    inputData: value,
+  });
+};
+
+export const confirmChangeEmailOrPhone = async ({
+  user,
+  payload,
+}: {
+  user: User;
+  payload: {
+    code: string;
+    channel: 'email' | 'phone';
+  };
+}) => {
+  const { channel, code } = payload;
+
+  const verification = await verificationService({
+    code,
+    userId: user.id,
+    expectedType: channel === 'email' ? 'EMAIL_CHANGE' : 'PHONE_CHANGE',
+  });
+
+  if (!verification) throw createHttpError(401, 'Unauthorized');
+
+  return verification;
+};
+
+export const getUserInfo = async (id: string) => {
   const user = await prisma.user.findUnique({
     where: {
       id,

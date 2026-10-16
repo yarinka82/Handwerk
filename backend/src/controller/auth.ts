@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   changePassword,
   changeUserData,
+  confirmChangeEmailOrPhone,
   confirmEmailOrPhone,
   confirmQuickRegister,
   getUserInfo,
@@ -10,9 +11,11 @@ import {
   quickLogin,
   refreshUser,
   registerUser,
+  requestChangeEmailOrPhone,
   requestChangePassword,
   requestConfirmEmailOrPhone,
   requestQuickLogin,
+  requestQuickRegister,
   requestResetPassword,
   resetPassword,
 } from '../service/auth';
@@ -77,7 +80,7 @@ export const requestResetPasswordController = async (
   req: Request,
   res: Response,
 ) => {
-  const data = await requestResetPassword(req.body);
+  const data = await requestResetPassword(req.body.identifier);
 
   res.status(200).json({
     status: 200,
@@ -100,7 +103,7 @@ export const requestQuickLoginController = async (
   req: Request,
   res: Response,
 ) => {
-  await requestQuickLogin(req.body);
+  await requestQuickLogin(req.body.identifier);
 
   res.status(200).json({
     status: 200,
@@ -116,8 +119,11 @@ export const quickLoginController = async (req: Request, res: Response) => {
 
   res.status(200).json({
     status: 200,
-    message: 'Successfully register user',
-    data,
+    message: 'Successfully log in user',
+    data: {
+      ...data,
+      accessToken: session.accessToken,
+    },
   });
 };
 
@@ -125,11 +131,11 @@ export const requestQuickRegisterController = async (
   req: Request,
   res: Response,
 ) => {
-  const data = await confirmQuickRegister(req.body);
+  const data = await requestQuickRegister(req.body.identifier);
 
   res.status(200).json({
     status: 200,
-    message: 'Successfully register user',
+    message: 'Successfully request by sent',
     data,
   });
 };
@@ -145,7 +151,10 @@ export const confirmQuickRegisterController = async (
   res.status(200).json({
     status: 200,
     message: 'Successfully registered',
-    data,
+    data: {
+      ...data,
+      accessToken: session.accessToken,
+    },
   });
 };
 
@@ -201,7 +210,7 @@ export const requestChangePasswordController = async (
 ) => {
   const data = await requestChangePassword({
     user: req.user,
-    password: req.body,
+    password: req.body.password,
   });
 
   res.status(200).json({
@@ -215,15 +224,20 @@ export const confirmChangePasswordController = async (
   req: Request,
   res: Response,
 ) => {
-  const data = await changePassword({
+  const { data, session } = await changePassword({
     userId: req.user.id,
     ...req.body,
   });
 
+  setupSession(res, session);
+
   res.status(200).json({
     status: 200,
     message: 'Password change has been successfully ',
-    data,
+    data: {
+      ...data,
+      accessToken: session.accessToken,
+    },
   });
 };
 
@@ -233,7 +247,6 @@ export const ConfirmEmailController = async (req: Request, res: Response) => {
     userId: req.user.id,
     ...req.body,
   });
-
 
   res.status(200).json({
     status: 200,
@@ -249,10 +262,87 @@ export const ConfirmPhoneController = async (req: Request, res: Response) => {
     ...req.body,
   });
 
-
   res.status(200).json({
     status: 200,
     message: 'Phone number has been confirm successfully ',
+    data,
+  });
+};
+
+export const requestChangeEmailController = async (
+  req: Request,
+  res: Response,
+) => {
+  const data = await requestChangeEmailOrPhone({
+    user: req.user,
+    payload: {
+      password: req.body.password,
+      channel: 'email',
+      value: req.body.email,
+    },
+  });
+
+  res.status(200).json({
+    status: 200,
+    message: 'Request change email has been successfully ',
+    data,
+  });
+};
+
+export const confirmChangeEmailController = async (
+  req: Request,
+  res: Response,
+) => {
+  const data = await confirmChangeEmailOrPhone({
+    user: req.user,
+    payload: {
+      code: req.body.code,
+      channel: 'email',
+    },
+  });
+
+  res.status(200).json({
+    status: 200,
+    message: 'Email change successfully ',
+    data,
+  });
+};
+
+export const requestChangePhoneController = async (
+  req: Request,
+  res: Response,
+) => {
+  const data = await requestChangeEmailOrPhone({
+    user: req.user,
+    payload: {
+      password: req.body.password,
+      channel: 'phone',
+      value: req.body.phone,
+    },
+  });
+
+  res.status(200).json({
+    status: 200,
+    message: 'Request change phone has been successfully ',
+    data,
+  });
+};
+
+export const confirmChangePhoneController = async (
+  req: Request,
+  res: Response,
+) => {
+  const data = await confirmChangeEmailOrPhone({
+    user: req.user,
+    payload: {
+      code: req.body.code,
+      channel: 'phone',
+    },
+  });
+
+  res.status(200).json({
+    status: 200,
+    message: 'Phone change successfully ',
     data,
   });
 };

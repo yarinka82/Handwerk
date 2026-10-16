@@ -1,96 +1,71 @@
 import Joi from 'joi';
-import { validateCode } from '../utils/googleOAuth2';
 import { joiPasswordExtendCore } from 'joi-password';
+import { parseIdentifier } from '../utils/parseIdentifier';
 
 const JoiPassword = Joi.extend(joiPasswordExtendCore);
 
-export const BaseUserSchema = Joi.object({
-  email: Joi.string().trim().lowercase().email().optional().messages({
-    'email.email': 'Die E-Mail muss eine gültige Adresse sein',
-  }),
-  phone: Joi.string()
-    .trim()
-    .pattern(/^\+?\d{10,15}$/)
-    .optional(),
-})
-  .xor('email', 'phone')
+export const emailSchema = Joi.string().email().lowercase().trim();
+
+export const phoneSchema = Joi.string()
+  .pattern(/^\+?[1-9]\d{7,14}$/)
+  .trim();
+export const BaseIdentifierSchema = Joi.string()
+  .trim()
+  .required()
   .custom((value, helpers) => {
-    if (value.email) {
-      value.channel = 'email';
-      value.value = value.email.toLowerCase().trim();
-    } else if (value.phone) {
-      const cleanPhone = value.phone.replace(/\D/g, '');
+    const identity = parseIdentifier(value);
 
-      if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-        return helpers.message({
-          custom: 'Phone number must contain between 10 and 15 digits',
-        });
-      }
-
-      value.channel = 'phone';
-      value.value = `+${cleanPhone}`;
+    if (!identity) {
+      return helpers.error('Invalid identifier');
     }
 
-    delete value.email;
-    delete value.phone;
-
-    return value;
+    return identity;
   });
 
-export const registerUserSchema = BaseUserSchema.concat(
-  Joi.object({
-    name: Joi.string().trim().min(3).max(20).required().messages({
-      'string.base': 'Der Name muss eine Zeichenkette sein',
-      'string.min': 'Der Name muss mindestens {#limit} Zeichen haben',
-      'string.max': 'Der Name darf höchstens {#limit} Zeichen haben',
-      'string.required': 'Der Name ist erforderlich',
-    }),
-    password: JoiPassword.string()
-      .trim()
-      .minOfUppercase(1)
-      .minOfLowercase(1)
-      .minOfSpecialCharacters(1)
-      .minOfNumeric(1)
-      .noWhiteSpaces()
-      .min(8)
-      .required()
-      .messages({
-        'string.required': 'Passwort ist erforderlich',
-        'password.minOfUppercase':
-          'Das Passwort muss mindestens einen Großbuchstaben enthalten',
-        'password.minOfLowercase':
-          'Das Passwort muss mindestens einen Kleinbuchstaben enthalten',
-        'password.minOfSpecialCharacters':
-          'Das Passwort muss mindestens ein Sonderzeichen enthalten',
-        'password.minOfNumeric':
-          'Das Passwort muss mindestens eine Zahl enthalten',
-        'password.noWhiteSpaces':
-          'Das Passwort darf keine Leerzeichen enthalten',
-        'password.min':
-          'Das Passwort muss mindestens {#limit} Zeichen lang sein',
-      }),
+export const quickIdentityschema = Joi.object({
+  identifier: BaseIdentifierSchema,
+});
+
+export const registerUserSchema = Joi.object({
+  identifier: BaseIdentifierSchema,
+  name: Joi.string().trim().min(3).max(20).optional().messages({
+    'string.base': 'Der Name muss eine Zeichenkette sein',
+    'string.min': 'Der Name muss mindestens {#limit} Zeichen haben',
+    'string.max': 'Der Name darf höchstens {#limit} Zeichen haben',
   }),
-);
+  password: JoiPassword.string()
+    .trim()
+    .minOfUppercase(1)
+    .minOfLowercase(1)
+    .minOfSpecialCharacters(1)
+    .minOfNumeric(1)
+    .noWhiteSpaces()
+    .min(8)
+    .required()
+    .messages({
+      'string.required': 'Passwort ist erforderlich',
+      'password.minOfUppercase':
+        'Das Passwort muss mindestens einen Großbuchstaben enthalten',
+      'password.minOfLowercase':
+        'Das Passwort muss mindestens einen Kleinbuchstaben enthalten',
+      'password.minOfSpecialCharacters':
+        'Das Passwort muss mindestens ein Sonderzeichen enthalten',
+      'password.minOfNumeric':
+        'Das Passwort muss mindestens eine Zahl enthalten',
+      'password.noWhiteSpaces': 'Das Passwort darf keine Leerzeichen enthalten',
+      'password.min': 'Das Passwort muss mindestens {#limit} Zeichen lang sein',
+    }),
+});
 
 export const loginUserSchema = Joi.object({
-  email: Joi.string().trim().lowercase().email().required().messages({
-    'email.email': 'Email should be valid email',
-    'email.required': 'Email should be required',
-  }),
+  identifier: BaseIdentifierSchema,
   password: JoiPassword.string().trim().required().messages({
     'password.required': 'Password should be required',
   }),
 });
 
 export const resetPasswordSchema = Joi.object({
-  email: Joi.string().trim().lowercase().email().optional().messages({
-    'email.email': 'Email should be valid email',
-    'email.required': 'Email should be required',
-  }),
-  phone: Joi.string()
-    .trim()
-    .pattern(/^\+?\d{10,15}$/)
-    .optional(),
+  identifier: BaseIdentifierSchema,
   password: JoiPassword.string()
     .trim()
     .minOfUppercase(1)
@@ -123,97 +98,7 @@ export const resetPasswordSchema = Joi.object({
     'string.empty': 'Token is required',
     'any.required': 'Token is required',
   }),
-})
-  .xor('email', 'phone')
-  .xor('token', 'code')
-  .custom((value, helpers) => {
-    if (value.email) {
-      value.channel = 'email';
-      value.value = value.email.toLowerCase().trim();
-    } else if (value.phone) {
-      const cleanPhone = value.phone.replace(/\D/g, '');
-
-      if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-        return helpers.message({
-          custom: 'Phone number must contain between 10 and 15 digits',
-        });
-      }
-
-      value.channel = 'phone';
-      value.value = `+${cleanPhone}`;
-    }
-
-    delete value.email;
-    delete value.phone;
-
-    return value;
-  });
-
-export const baseIdentitySchema = Joi.object({
-  email: Joi.string().trim().lowercase().max(128).email().optional(),
-  phone: Joi.string().trim().optional(),
-  telegramId: Joi.string().trim().optional(),
-
-  googleToken: Joi.string().trim().optional(),
-})
-  .xor('email', 'phone', 'telegramId', 'googleToken')
-  .messages({
-    'object.missing':
-      'Es muss entweder eine E-Mail, Telefonnummer, Telegram-ID oder ein Google-Token angegeben werden',
-    'string.email': 'Die E-Mail muss eine gültige Adresse sein',
-    'string.max': 'Die E-Mail darf höchstens {#limit} Zeichen haben',
-    'string.base': 'Ungültiger Eingabetyp',
-  })
-  .custom(async (value, helpers) => {
-    if (value.googleToken) {
-      try {
-        const { ticket, googleTokens } = await validateCode(value.googleCode);
-
-        const payload = ticket.getPayload();
-        if (!payload || !payload.sub) {
-          return helpers.message({ custom: 'Invalid Google token payload' });
-        }
-
-        value.channel = 'googleId';
-        value.value = payload.sub;
-
-        value.googleAccessToken = googleTokens.access_token || undefined;
-        value.googleRefreshToken = googleTokens.refresh_token || undefined;
-
-        if (payload.email) {
-          value.email = payload.email.toLowerCase();
-        }
-      } catch (error) {
-        console.error(error);
-        return helpers.message({ custom: 'Google authentication failed' });
-      }
-
-      delete value.googleToken;
-      return value;
-    }
-
-    if (value.email) {
-      value.channel = 'email';
-      value.value = value.email;
-    } else if (value.phone) {
-      const cleanPhone = value.phone.replace(/\D/g, '');
-      if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-        return helpers.message({
-          custom: 'Phone number must contain between 10 and 15 digits',
-        });
-      }
-      value.channel = 'phone';
-      value.value = `+${cleanPhone}`;
-    } else if (value.telegramId) {
-      value.channel = 'telegramId';
-      value.value = value.telegramId;
-    }
-    delete value.email;
-    delete value.phone;
-    delete value.telegramId;
-
-    return value;
-  });
+}).xor('token', 'code');
 
 export const changePasswordSchema = Joi.object({
   password: JoiPassword.string()
@@ -240,52 +125,35 @@ export const changePasswordSchema = Joi.object({
     }),
 });
 
-export const confirmSchema = Joi.object({
-  code: Joi.string().trim().optional(),
-  token: Joi.string().trim().optional(),
-})
-  .xor('code', 'token')
-  .messages({
-    'object.missing':
-      'Es muss entweder ein Code oder ein Token angegeben werden',
-    'string.base': 'Ungültiger Eingabetyp für Bestätigung',
-  });
-
-export const quickConfirmSchema = baseIdentitySchema.concat(confirmSchema);
-
-export const confirmRequestOrderSchema = baseIdentitySchema
-  .concat(
-    Joi.object({
-      code: Joi.string().optional(),
-      token: Joi.string().optional(),
-
-      order: Joi.object({
-        masterId: Joi.number().integer().positive().required(),
-        description: Joi.string().max(500).required(),
-        startAt: Joi.string().isoDate().required(),
-        endAt: Joi.string().isoDate().required(),
-      }).required(),
-    }),
-  )
-  .xor('token', 'code')
-  .messages({
-    'object.missing':
-      'Es muss entweder ein Code oder ein Token angegeben werden',
-    'string.base': 'Ungültiger Eingabetyp für Bestätigung',
-  });
-
-export const confirmOrderSchema = baseIdentitySchema.concat(
-  Joi.object({
-    masterId: Joi.number().integer().positive().required(),
-    description: Joi.string().max(500).required(),
-    startAt: Joi.string().isoDate().required(),
-    endAt: Joi.string().isoDate().required(),
+export const changePhoneSchema = Joi.object({
+  password: Joi.string().trim().required().messages({
+    'any.required': 'password is required',
+    'string.empty': 'password cannot be empty',
   }),
-);
+  phone: Joi.string()
+    .pattern(/^\+?[1-9]\d{7,14}$/)
+    .trim()
+    .messages({
+      'any.required': 'Phone is required',
+      'string.empty': 'Phone cannot be empty',
+      'string.pattern.base': 'Phone must be a valid phone number',
+    }),
+});
+
+export const changeEmailSchema = Joi.object({
+  password: Joi.string().trim().required().messages({
+    'any.required': 'password is required',
+    'string.empty': 'password cannot be empty',
+  }),
+  email: Joi.string().email().lowercase().trim().required().messages({
+    'string.email': 'Email must be a valid email',
+    'any.required': 'Email is required',
+    'string.empty': 'Email cannot be empty',
+  }),
+});
 
 export const changeProfileSchema = Joi.object({
   name: Joi.string().trim().max(50).optional(),
-  password: Joi.string().min(6).optional(),
   email: Joi.string().trim().lowercase().max(128).email().optional().messages({
     'email.max': 'Email should have at most {#limit} characters',
     'email.email': 'Email should be valid email',

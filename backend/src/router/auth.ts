@@ -19,18 +19,23 @@ import {
   confirmChangePasswordController,
   ConfirmPhoneController,
   ConfirmEmailController,
+  requestChangeEmailController,
+  confirmChangeEmailController,
+  confirmChangePhoneController,
+  requestChangePhoneController,
 } from '../controller/auth';
 import { validateBody } from '../middlewares/validateBody';
 import {
-  BaseUserSchema,
+  changeEmailSchema,
   changePasswordSchema,
+  changePhoneSchema,
   changeProfileSchema,
-  confirmSchema,
   loginUserSchema,
-  quickConfirmSchema,
+  quickIdentityschema,
   registerUserSchema,
   resetPasswordSchema,
 } from '../validation/auth';
+import { BaseConfirmSchema, confirmSchema } from '../validation/confirm';
 
 const router = Router();
 
@@ -43,25 +48,27 @@ router.post('/login', validateBody(loginUserSchema), loginUserController);
 
 router.post(
   '/request-quick-login',
-  validateBody(BaseUserSchema),
+  validateBody(quickIdentityschema),
   requestQuickLoginController,
 );
+
+router.post('/quick-login', validateBody(confirmSchema), quickLoginController);
+
 router.post(
-  '/quick-login',
-  validateBody(quickConfirmSchema),
-  quickLoginController,
+  '/request-quick-register',
+  validateBody(quickIdentityschema),
+  requestQuickRegisterController,
 );
 
-router.post('/quick-register', requestQuickRegisterController);
 router.post(
-  '/confirm-quick-register',
-  validateBody(quickConfirmSchema),
+  '/quick-register',
+  validateBody(confirmSchema),
   confirmQuickRegisterController,
 );
 
 router.post(
-  '/send-reset-pwd',
-  validateBody(BaseUserSchema),
+  '/request-reset-pwd',
+  validateBody(quickIdentityschema),
   requestResetPasswordController,
 );
 
@@ -71,14 +78,14 @@ router.post(
   resetPasswordController,
 );
 
-router.use(authenticate);
+// router.use(authenticate);
 
-router.post('/refresh', refreshUserController);
-router.post('/logout', logoutUserControler);
-
+router.post('/refresh', authenticate, refreshUserController);
+router.post('/logout', authenticate, logoutUserControler);
 
 router.patch(
   '/user',
+  authenticate,
   validateBody(changeProfileSchema),
   changeUserDataController,
 );
@@ -87,35 +94,65 @@ router.get('/user', getUserInfoCntroller);
 
 router.post(
   '/request-confirm-email',
-  validateBody(BaseUserSchema),
+  authenticate,
   requestConfirmEmailController,
 );
 router.patch(
   '/confirm-email',
-  validateBody(quickConfirmSchema),
+  authenticate,
+  validateBody(confirmSchema),
   ConfirmEmailController,
 );
 
 router.post(
   '/request-confirm-phone',
-  validateBody(BaseUserSchema),
+  authenticate,
   requestConfirmPhoneController,
 );
 router.patch(
   '/confirm-phone',
-  validateBody(quickConfirmSchema),
+  authenticate,
+  validateBody(confirmSchema),
   ConfirmPhoneController,
 );
 
 router.post(
   '/request-change-password',
+  authenticate,
   validateBody(changePasswordSchema),
   requestChangePasswordController,
 );
 router.patch(
   '/change-password',
-  validateBody(confirmSchema),
+  authenticate,
+  validateBody(BaseConfirmSchema),
   confirmChangePasswordController,
+);
+
+router.post(
+  '/request-change-email',
+  authenticate,
+  validateBody(changeEmailSchema),
+  requestChangeEmailController,
+);
+router.patch(
+  '/change-email',
+  authenticate,
+  validateBody(BaseConfirmSchema),
+  confirmChangeEmailController,
+);
+
+router.post(
+  '/request-change-phone',
+  authenticate,
+  validateBody(changePhoneSchema),
+  requestChangePhoneController,
+);
+router.patch(
+  '/change-phone',
+  authenticate,
+  validateBody(BaseConfirmSchema),
+  confirmChangePhoneController,
 );
 
 export default router;

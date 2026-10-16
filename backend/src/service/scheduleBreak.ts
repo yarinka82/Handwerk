@@ -14,7 +14,7 @@ export const createScheduleBreak = async ({
     type: BreakType;
     recurrenceOptions: RecurrencePayload;
   };
-  userId: number;
+  userId: string;
 }) => {
   const { startTime, endTime, type, recurrenceOptions } = payload;
 
@@ -46,7 +46,7 @@ export const deleteScheduleBreak = async ({
   userId,
 }: {
   breakId: string;
-  userId: number;
+  userId: string;
 }) => {
   const master = await prisma.masterProfile.findUnique({
     where: {
